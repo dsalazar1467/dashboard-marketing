@@ -147,6 +147,170 @@ const ES_DIRECTIVO = r => r === 'gerencia' || r === 'direccion';
 let myProfile = null;      // perfil logueado
 let viewingProfile = null; // perfil que se está mirando (puede ser otro, si soy directivo)
 let allProfiles = [];
+let currentCuanti = [];
+let currentViewProfile = null;
+let currentPeriodoStr = null;
+let currentPuedeCargarCuanti = false;
+
+let pdfJsReady = null;
+function loadPdfJs(){
+  if(pdfJsReady) return pdfJsReady;
+  pdfJsReady = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = ()=>{
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return pdfJsReady;
+}
+
+function getHandles(marca){
+  const key = `mc_handles_${marca}`;
+  let saved = localStorage.getItem(key);
+  if(saved) return JSON.parse(saved);
+  const facebook = prompt(`Nombre de la cuenta de FACEBOOK de ${marca} tal como aparece en la portada del PDF de Metricool (ej: "TimeOut"):`);
+  const instagram = prompt(`Nombre de la cuenta de INSTAGRAM de ${marca} tal como aparece en la portada (ej: "timeoutuy"):`);
+  const tiktok = prompt(`Nombre de la cuenta de TIKTOK de ${marca} tal como aparece en la portada (ej: "Timeoutuy"):`);
+  const handles = { facebook: (facebook||'').trim(), instagram: (instagram||'').trim(), tiktok: (tiktok||'').trim() };
+  localStorage.setItem(key, JSON.stringify(handles));
+  return handles;
+}
+
+function extractNumber(segment, label, windowChars){
+  windowChars = windowChars || 200;
+  const idx = segment.indexOf(label);
+  if(idx === -1) return null;
+  const chunk = segment.slice(idx + label.length, idx + label.length + windowChars);
+  const m = chunk.match(/-?\d+(?:[.,]\d+)?/);
+  if(!m) return null;
+  return parseFloat(m[0].replace(',', '.'));
+}
+
+function extractRedMetrics(segment){
+  const engagement = extractNumber(segment, 'Engagement');
+  const alcanceProm = extractNumber(segment, 'Alcance promedio');
+  const posts = extractNumber(segment, 'Posts');
+  let seguidores = extractNumber(segment, 'Balance de');
+  if(seguidores === null){
+    const adquiridos = extractNumber(segment, 'Adquiridos');
+    const perdidos = extractNumber(segment, 'Perdidos');
+    if(adquiridos !== null && perdidos !== null) seguidores = adquiridos - perdidos;
+  }
+  const alcanceTotal = (alcanceProm !== null && posts !== null) ? Math.round(alcanceProm * posts) : null;
+  return { alcance: alcanceTotal, engagement, seguidores };
+}
+
+async function parsePdfAndBuildCsv(event){
+  const file = event.target.files[0];
+  const msg = document.getElementById('import-msg');
+  if(!file) return;
+  const marcaSel = document.getElementById('pdf-marca-select');
+  const marca = marcaSel ? marcaSel.value : null;
+  if(!marca){ msg.className='pwd-msg err'; msg.textContent='No hay marca seleccionada.'; return; }
+
+  msg.className = 'pwd-msg'; msg.textContent = 'Leyendo PDF…';
+  const handles = getHandles(marca);
+  const pdfjsLib = await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = '';
+  for(let p = 1; p <= pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    fullText += '\n' + content.items.map(it=>it.str).join('\n');
+  }
+
+  const positions = [
+    { red: 'Instagram', idx: handles.instagram ? fullText.indexOf(handles.instagram) : -1 },
+    { red: 'TikTok', idx: handles.tiktok ? fullText.indexOf(handles.tiktok) : -1 },
+    { red: 'Facebook', idx: handles.facebook ? fullText.indexOf(handles.facebook) : -1 },
+  ].filter(p => p.idx !== -1).sort((a,b)=>a.idx-b.idx);
+
+  const resultados = {};
+  positions.forEach((p, i) => {
+    const end = i + 1 < positions.length ? positions[i+1].idx : fullText.length;
+    resultados[p.red] = extractRedMetrics(fullText.slice(p.idx, end));
+  });
+
+  const rows = [['id','indicador','marca','red_social','valor']];
+  let encontrados = 0;
+  currentCuanti.forEach(ind => {
+    let valor = '';
+    if(ind.marca === marca && ind.red_social && resultados[ind.red_social]){
+      const r = resultados[ind.red_social];
+      if(ind.nombre.includes('Alcance') && r.alcance !== null){ valor = r.alcance; encontrados++; }
+      else if(ind.nombre.includes('Engagement') && r.engagement !== null){ valor = r.engagement; encontrados++; }
+      else if(ind.nombre.includes('seguidores') && r.seguidores !== null){ valor = r.seguidores; encontrados++; }
+    }
+    rows.push([ind.id, ind.nombre, ind.marca||'', ind.red_social||'', valor]);
+  });
+
+  const csv = rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `borrador_${marca.toLowerCase().replace(/\s+/g,'_')}_${currentPeriodoStr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  msg.className = 'pwd-msg ok';
+  msg.textContent = `Se completaron ${encontrados} de ${currentCuanti.filter(i=>i.marca===marca && i.red_social).length} valores de ${marca} automáticamente. Revisá el CSV descargado (los demás campos de otras marcas quedan vacíos) y luego usá "Importar CSV".`;
+  event.target.value = '';
+}
+
+function csvEscape(v){
+  v = (v===null||v===undefined) ? '' : String(v);
+  return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
+}
+
+function downloadTemplate(){
+  const rows = [['id','indicador','marca','red_social','valor']];
+  currentCuanti.forEach(i=>{
+    rows.push([i.id, i.nombre, i.marca||'', i.red_social||'', '']);
+  });
+  const csv = rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `plantilla_${currentViewProfile.nombre.toLowerCase()}_${currentPeriodoStr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim().length);
+  return lines.slice(1).map(line=>{
+    // parseo simple compatible con el formato de nuestra plantilla (sin comillas complejas)
+    const parts = line.split(',');
+    return { id: parts[0], indicador: parts[1], marca: parts[2], red_social: parts[3], valor: parts[4] };
+  });
+}
+
+async function importCSV(event){
+  const file = event.target.files[0];
+  const msg = document.getElementById('import-msg');
+  if(!file) return;
+  const text = await file.text();
+  const rows = parseCSV(text);
+  const validIds = new Set(currentCuanti.map(i=>String(i.id)));
+  let importados = 0, ignorados = 0;
+  for(const row of rows){
+    if(!row.id || !validIds.has(String(row.id)) || row.valor===undefined || row.valor.trim()===''){ ignorados++; continue; }
+    const { error } = await sb.from('valores_cuantitativos').upsert({
+      indicador_id: Number(row.id), persona_id: currentViewProfile.id, periodo: currentPeriodoStr,
+      valor: Number(row.valor), cargado_por: myProfile.id
+    }, { onConflict: 'indicador_id,persona_id,periodo' });
+    if(!error) importados++; else ignorados++;
+  }
+  msg.className = 'pwd-msg ok';
+  msg.textContent = `${importados} valores importados${ignorados?`, ${ignorados} filas ignoradas (vacías o inválidas)`:''}.`;
+  event.target.value = '';
+  renderPersona(currentViewProfile);
+}
 
 function currentPeriodo(){
   const d = new Date();
@@ -236,6 +400,16 @@ function switchTo(id){
   renderPersona(viewingProfile);
 }
 
+function applyFilters(){
+  const marca = document.getElementById('filter-marca')?.value || '';
+  const red = document.getElementById('filter-red')?.value || '';
+  document.querySelectorAll('tr[data-marca]').forEach(tr=>{
+    const okMarca = !marca || tr.dataset.marca === marca;
+    const okRed = !red || tr.dataset.red === red;
+    tr.style.display = (okMarca && okRed) ? '' : 'none';
+  });
+}
+
 function pill(tipo){ return `<span class="pill ${tipo==='cuantitativo'?'cuanti':'cuali'}">${tipo==='cuantitativo'?'Cuantitativo':'Cualitativo'}</span>`; }
 
 async function renderPersona(profile){
@@ -253,19 +427,36 @@ async function renderPersona(profile){
 
   const cuanti = (indicadores||[]).filter(i=>i.tipo==='cuantitativo');
   const cuali = (indicadores||[]).filter(i=>i.tipo==='cualitativo');
+  const marcasUnicas = [...new Set(cuanti.filter(i=>i.red_social).map(i=>i.marca).filter(Boolean))];
+  currentCuanti = cuanti;
+  currentViewProfile = profile;
+  currentPeriodoStr = periodo;
+  currentPuedeCargarCuanti = puedeCargarCuanti;
 
   document.getElementById('main').innerHTML = `
     <div class="page-head">
       <div><h1>${profile.nombre}</h1><div class="sub">${ROL_LABEL[profile.rol]}</div></div>
       <div class="period">Período: <b>${periodo.slice(0,7)}</b></div>
     </div>
-    <div class="section-title"><span class="num">01</span> Indicadores cuantitativos</div>
+    <div class="section-title"><span class="num">01</span> Indicadores cuantitativos
+      ${puedeCargarCuanti ? `<span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        ${marcasUnicas.length ? `<select id="pdf-marca-select">${marcasUnicas.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>` : ''}
+        <button class="savebtn" onclick="downloadTemplate()">Descargar plantilla CSV</button>
+        ${marcasUnicas.length ? `<label class="savebtn" style="cursor:pointer;">Generar CSV desde PDF Metricool<input type="file" accept=".pdf" style="display:none" onchange="parsePdfAndBuildCsv(event)"></label>` : ''}
+        <label class="savebtn" style="cursor:pointer;">Importar CSV<input type="file" accept=".csv" style="display:none" onchange="importCSV(event)"></label>
+      </span>` : ''}
+    </div>
+    <div class="pwd-msg" id="import-msg" style="margin-bottom:10px;"></div>
+    ${marcasUnicas.length ? `<div class="filters">
+      <select id="filter-marca" onchange="applyFilters()"><option value="">Todas las marcas</option>${marcasUnicas.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
+      <select id="filter-red" onchange="applyFilters()"><option value="">Todas las redes</option>${[...new Set(cuanti.filter(i=>i.red_social).map(i=>i.red_social))].map(r=>`<option value="${r}">${r}</option>`).join('')}</select>
+    </div>` : ''}
     <table>
       <tr><th>Indicador</th><th>Marca / Red</th><th style="width:170px;">Valor</th><th>Objetivo</th></tr>
       ${cuanti.length ? cuanti.map(i=>{
         const v = valMap[i.id];
         const disabled = puedeCargarCuanti ? '' : 'disabled';
-        return `<tr>
+        return `<tr data-marca="${i.marca||''}" data-red="${i.red_social||''}">
           <td>${i.nombre}<div class="tagmini">${i.frecuencia||''} · ${i.fuente_datos||''}</div></td>
           <td class="tagmini">${[i.marca,i.red_social].filter(Boolean).join(' · ') || '—'}</td>
           <td><input class="valinput" id="v-${i.id}" type="number" step="any" value="${v?v.valor:''}" ${disabled}>
