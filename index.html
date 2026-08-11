@@ -40,6 +40,17 @@
   .topbar .who b{color:#fff;}
   .logout{background:none;border:1px solid #444;color:#cfcfcf;font-size:12px;padding:6px 12px;cursor:pointer;font-family:'Inter';}
   .logout:hover{border-color:var(--red);color:#fff;}
+  .pwd-toggle{background:none;border:1px solid #444;color:#cfcfcf;font-size:12px;padding:6px 12px;cursor:pointer;font-family:'Inter';}
+  .pwd-toggle:hover{border-color:#fff;color:#fff;}
+  .pwd-panel{position:absolute;top:60px;right:28px;background:#fff;border:1px solid var(--line);border-top:4px solid var(--red);padding:18px;width:260px;box-shadow:0 8px 24px rgba(0,0,0,.15);display:none;z-index:10;}
+  .pwd-panel.open{display:block;}
+  .pwd-panel .field{margin-bottom:12px;}
+  .pwd-panel .field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  .pwd-panel input{width:100%;padding:8px 9px;border:1px solid var(--line);font-family:'Inter';font-size:13px;}
+  .pwd-panel .btn{margin-top:4px;padding:9px;font-size:13px;}
+  .pwd-msg{font-size:11.5px;margin-top:8px;min-height:14px;}
+  .pwd-msg.ok{color:#1F7A3D;}
+  .pwd-msg.err{color:var(--red);}
 
   .layout{display:flex;max-width:1240px;margin:0 auto;}
   .sidebar{width:230px;flex-shrink:0;padding:26px 18px;border-right:1px solid var(--line);min-height:calc(100vh - 60px);}
@@ -102,8 +113,15 @@
   <div class="topbar">
     <div class="brand">DACRIMAR <span>MKT</span></div>
     <div class="who"><span id="who-role"></span><b id="who-name"></b>
+      <button class="pwd-toggle" onclick="togglePwdPanel()">Cambiar contraseña</button>
       <button class="logout" onclick="doLogout()">Salir</button>
     </div>
+  </div>
+  <div class="pwd-panel" id="pwd-panel">
+    <div class="field"><label>Nueva contraseña</label><input id="pwd-new" type="password" placeholder="Mínimo 6 caracteres"></div>
+    <div class="field"><label>Repetir contraseña</label><input id="pwd-confirm" type="password"></div>
+    <button class="btn" onclick="changePassword()">Guardar contraseña</button>
+    <div class="pwd-msg" id="pwd-msg"></div>
   </div>
   <div class="layout">
     <div class="sidebar" id="sidebar"></div>
@@ -168,6 +186,26 @@ async function afterLogin(user){
   }
   buildSidebar();
   renderPersona(viewingProfile);
+}
+
+function togglePwdPanel(){
+  const panel = document.getElementById('pwd-panel');
+  panel.classList.toggle('open');
+  document.getElementById('pwd-new').value = '';
+  document.getElementById('pwd-confirm').value = '';
+  document.getElementById('pwd-msg').textContent = '';
+}
+
+async function changePassword(){
+  const nueva = document.getElementById('pwd-new').value;
+  const confirmar = document.getElementById('pwd-confirm').value;
+  const msg = document.getElementById('pwd-msg');
+  msg.className = 'pwd-msg';
+  if(nueva.length < 6){ msg.textContent = 'Mínimo 6 caracteres.'; msg.classList.add('err'); return; }
+  if(nueva !== confirmar){ msg.textContent = 'Las contraseñas no coinciden.'; msg.classList.add('err'); return; }
+  const { error } = await sb.auth.updateUser({ password: nueva });
+  if(error){ msg.textContent = 'No se pudo cambiar: ' + error.message; msg.classList.add('err'); }
+  else { msg.textContent = 'Contraseña actualizada ✓'; msg.classList.add('ok'); setTimeout(togglePwdPanel, 1800); }
 }
 
 async function doLogout(){
