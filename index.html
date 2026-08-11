@@ -185,22 +185,23 @@ function extractNumber(segment, label, windowChars){
   const idx = segment.indexOf(label);
   if(idx === -1) return null;
   const chunk = segment.slice(idx + label.length, idx + label.length + windowChars);
-  const m = chunk.match(/-?\d+(?:[.,]\d+)?/);
-  if(!m) return null;
-  return parseFloat(m[0].replace(',', '.'));
+  const m = chunk.match(/(-?\d+(?:[.,]\d+)?)\s?(K|M)?/);
+  if(!m || m[1] === undefined) return null;
+  let val = parseFloat(m[1].replace(',', '.'));
+  if(m[2] === 'K') val *= 1000;
+  if(m[2] === 'M') val *= 1000000;
+  return Math.round(val);
 }
 
-function extractRedMetrics(segment){
+function extractRedMetrics(segment, red){
   const engagement = extractNumber(segment, 'Engagement');
-  const alcanceProm = extractNumber(segment, 'Alcance promedio');
-  const posts = extractNumber(segment, 'Posts');
+  const alcanceTotal = red === 'TikTok' ? extractNumber(segment, 'Reprod.') : extractNumber(segment, 'Visualizaciones');
   let seguidores = extractNumber(segment, 'Balance de');
   if(seguidores === null){
     const adquiridos = extractNumber(segment, 'Adquiridos');
     const perdidos = extractNumber(segment, 'Perdidos');
     if(adquiridos !== null && perdidos !== null) seguidores = adquiridos - perdidos;
   }
-  const alcanceTotal = (alcanceProm !== null && posts !== null) ? Math.round(alcanceProm * posts) : null;
   return { alcance: alcanceTotal, engagement, seguidores };
 }
 
@@ -233,7 +234,7 @@ async function parsePdfAndBuildCsv(event){
   const resultados = {};
   positions.forEach((p, i) => {
     const end = i + 1 < positions.length ? positions[i+1].idx : fullText.length;
-    resultados[p.red] = extractRedMetrics(fullText.slice(p.idx, end));
+    resultados[p.red] = extractRedMetrics(fullText.slice(p.idx, end), p.red);
   });
 
   const rows = [['id','indicador','marca','red_social','valor']];
