@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Equipo Marketing — Umbro Uruguay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --red:#E8001D; --ink:#141414; --paper:#FAFAF8; --line:#E3E1DA; --muted:#726F68;
+    --cuanti:#2452A8; --cuanti-bg:#E4ECF9; --cuali:#C25A12; --cuali-bg:#FBEADC; --white:#fff;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;}
+  h1,h2,h3{font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.02em;}
+  .mono{font-family:'Roboto Mono',monospace;}
+
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--ink);position:relative;overflow:hidden;}
+  #login::before{content:"";position:absolute;inset:0;background-image:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 120px);}
+  .login-card{position:relative;width:380px;background:var(--paper);padding:44px 40px 36px;border-top:6px solid var(--red);}
+  .login-card .kicker{color:var(--red);font-weight:700;font-size:13px;letter-spacing:.14em;margin-bottom:2px;}
+  .login-card h1{font-size:34px;line-height:.95;margin:0 0 26px;font-weight:800;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;font-weight:600;}
+  .field input{width:100%;padding:11px 12px;border:1px solid var(--line);background:var(--white);font-family:'Inter';font-size:14px;}
+  .field input:focus{outline:2px solid var(--red);outline-offset:1px;border-color:var(--red);}
+  .btn{width:100%;padding:13px;background:var(--ink);color:#fff;border:none;font-family:'Barlow Condensed';font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;margin-top:6px;}
+  .btn:hover{background:var(--red);}
+  .btn:disabled{opacity:.5;cursor:default;}
+  .err{color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px;}
+  .demo-note{margin-top:16px;font-size:11.5px;color:var(--muted);line-height:1.5;}
+
+  #app{display:none;min-height:100vh;}
+  .topbar{background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:60px;}
+  .topbar .brand{font-family:'Barlow Condensed';font-weight:800;font-size:20px;letter-spacing:.03em;}
+  .topbar .brand span{color:var(--red);}
+  .topbar .who{display:flex;align-items:center;gap:14px;font-size:13px;color:#cfcfcf;}
+  .topbar .who b{color:#fff;}
+  .logout{background:none;border:1px solid #444;color:#cfcfcf;font-size:12px;padding:6px 12px;cursor:pointer;font-family:'Inter';}
+  .logout:hover{border-color:var(--red);color:#fff;}
+
+  .layout{display:flex;max-width:1240px;margin:0 auto;}
+  .sidebar{width:230px;flex-shrink:0;padding:26px 18px;border-right:1px solid var(--line);min-height:calc(100vh - 60px);}
+  .sidebar .label{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.1em;margin-bottom:10px;font-weight:600;}
+  .nav-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 10px;font-family:'Inter';font-size:13.5px;color:var(--ink);cursor:pointer;border-left:3px solid transparent;margin-bottom:2px;}
+  .nav-item.active{border-left-color:var(--red);color:var(--red);font-weight:600;background:var(--cuanti-bg);}
+  .nav-item:hover:not(.active){background:#F2F1EC;}
+
+  .main{flex:1;padding:30px 32px 60px;}
+  .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;border-bottom:2px solid var(--ink);padding-bottom:14px;}
+  .page-head h1{font-size:30px;margin:0;font-weight:800;}
+  .page-head .sub{color:var(--muted);font-size:13px;margin-top:2px;}
+  .period{font-size:12px;color:var(--muted);}
+  .period b{color:var(--ink);}
+
+  .filters{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
+  .filters select{font-family:'Inter';font-size:12.5px;padding:7px 10px;border:1px solid var(--line);background:#fff;}
+
+  .section-title{font-size:20px;margin:6px 0 14px;font-weight:700;display:flex;align-items:center;gap:10px;}
+  .section-title .num{color:var(--red);}
+
+  table{width:100%;border-collapse:collapse;background:#fff;margin-bottom:30px;}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--ink);padding:8px 10px;}
+  td{padding:9px 10px;font-size:13px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tr:hover td{background:#F7F6F2;}
+  .pill{display:inline-block;font-size:10.5px;padding:2px 8px;font-weight:600;}
+  .pill.cuanti{background:var(--cuanti-bg);color:var(--cuanti);}
+  .pill.cuali{background:var(--cuali-bg);color:var(--cuali);}
+  .tagmini{font-size:10.5px;color:var(--muted);}
+
+  .valinput{width:90px;padding:5px 7px;border:1px solid var(--line);font-family:'Roboto Mono';font-size:12.5px;}
+  .savebtn{font-family:'Inter';font-size:11px;padding:5px 10px;border:1px solid var(--ink);background:#fff;cursor:pointer;margin-left:6px;}
+  .savebtn:hover{background:var(--ink);color:#fff;}
+  .savebtn.saved{background:#1F7A3D;border-color:#1F7A3D;color:#fff;}
+
+  .team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:30px;}
+  .person-card{background:#fff;border:1px solid var(--line);border-top:4px solid var(--ink);padding:18px;cursor:pointer;}
+  .person-card:hover{border-top-color:var(--red);}
+  .person-card .role{font-size:10.5px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em;margin-bottom:2px;}
+  .person-card .name{font-family:'Barlow Condensed';font-weight:800;font-size:22px;}
+  .empty{color:var(--muted);font-size:12.5px;padding:20px 0;}
+  .loading{padding:40px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="login-card">
+    <div class="kicker">DACRIMAR SA — UMBRO URUGUAY</div>
+    <h1>Panel de<br>Marketing</h1>
+    <div class="field"><label>Email</label><input id="email-input" type="email" placeholder="nombre@dacrimar.com"></div>
+    <div class="field"><label>Contraseña</label><input id="pass-input" type="password" placeholder="••••••••••"></div>
+    <button class="btn" id="login-btn" onclick="doLogin()">Ingresar</button>
+    <div class="err" id="login-err"></div>
+    <div class="demo-note">Conectado a Supabase — login real. Los usuarios se dan de alta desde Authentication &gt; Users.</div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div class="brand">DACRIMAR <span>MKT</span></div>
+    <div class="who"><span id="who-role"></span><b id="who-name"></b>
+      <button class="logout" onclick="doLogout()">Salir</button>
+    </div>
+  </div>
+  <div class="layout">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main" id="main"><div class="loading">Cargando…</div></div>
+  </div>
+</div>
+
+<script>
+// ====== CONFIGURACIÓN DE SUPABASE ======
+const SUPABASE_URL = "https://hzuwwzcqzyfmvavqexaf.supabase.co";
+const SUPABASE_KEY = "sb_publishable_GNXlIsnaMfyRG0xAh0-9Hg_t8eqzjx8";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const ROL_LABEL = {
+  gerencia: "Gerencia de Marketing",
+  coordinacion: "Coordinación de Marketing",
+  social_media: "Social Media Manager",
+  diseno: "Diseñadora Junior",
+  direccion: "Dirección"
+};
+const ES_DIRECTIVO = r => r === 'gerencia' || r === 'direccion';
+
+let myProfile = null;      // perfil logueado
+let viewingProfile = null; // perfil que se está mirando (puede ser otro, si soy directivo)
+let allProfiles = [];
+
+function currentPeriodo(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+}
+
+async function doLogin(){
+  const email = document.getElementById('email-input').value.trim();
+  const password = document.getElementById('pass-input').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-err');
+  err.textContent = '';
+  btn.disabled = true; btn.textContent = 'Ingresando…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Ingresar';
+  if(error){ err.textContent = 'Email o contraseña incorrectos.'; return; }
+  await afterLogin(data.user);
+}
+
+async function afterLogin(user){
+  const { data: profile, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if(error || !profile){
+    document.getElementById('login-err').textContent = 'Tu usuario no tiene un perfil vinculado todavía. Avisale a Daniela.';
+    await sb.auth.signOut();
+    return;
+  }
+  myProfile = profile;
+  viewingProfile = profile;
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('who-role').textContent = ROL_LABEL[profile.rol].toUpperCase() + ' — ';
+  document.getElementById('who-name').textContent = profile.nombre;
+
+  if(ES_DIRECTIVO(profile.rol)){
+    const { data: profs } = await sb.from('profiles').select('*').order('nombre');
+    allProfiles = profs || [];
+  }
+  buildSidebar();
+  renderPersona(viewingProfile);
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  myProfile = null; viewingProfile = null;
+  document.getElementById('login').style.display='flex';
+  document.getElementById('app').style.display='none';
+  document.getElementById('email-input').value='';
+  document.getElementById('pass-input').value='';
+}
+
+function buildSidebar(){
+  const sidebar = document.getElementById('sidebar');
+  if(ES_DIRECTIVO(myProfile.rol)){
+    sidebar.innerHTML = `<div class="label">Dirección</div>
+      <button class="nav-item ${viewingProfile.id===myProfile.id?'active':''}" onclick="switchTo('${myProfile.id}')">${myProfile.nombre} (yo)</button>
+      <div class="label" style="margin-top:22px;">Equipo</div>
+      ${allProfiles.filter(p=>p.id!==myProfile.id).map(p=>`<button class="nav-item ${viewingProfile&&viewingProfile.id===p.id?'active':''}" onclick="switchTo('${p.id}')">${p.nombre} — ${ROL_LABEL[p.rol]}</button>`).join('')}
+      <button class="nav-item" onclick="renderConsolidado()">Vista consolidada</button>`;
+  } else {
+    sidebar.innerHTML = `<div class="label">Mi panel</div><button class="nav-item active">Mis indicadores</button>`;
+  }
+}
+
+function switchTo(id){
+  viewingProfile = id===myProfile.id ? myProfile : allProfiles.find(p=>p.id===id);
+  buildSidebar();
+  renderPersona(viewingProfile);
+}
+
+function pill(tipo){ return `<span class="pill ${tipo==='cuantitativo'?'cuanti':'cuali'}">${tipo==='cuantitativo'?'Cuantitativo':'Cualitativo'}</span>`; }
+
+async function renderPersona(profile){
+  document.getElementById('main').innerHTML = '<div class="loading">Cargando indicadores…</div>';
+  const periodo = currentPeriodo();
+  const puedeCargarCuanti = myProfile.id === profile.id || ES_DIRECTIVO(myProfile.rol);
+  const puedeCargarCuali = ES_DIRECTIVO(myProfile.rol);
+
+  const { data: indicadores } = await sb.from('indicadores').select('*').eq('persona_rol', profile.rol).order('marca').order('nombre');
+  const { data: valores } = await sb.from('valores_cuantitativos').select('*').eq('persona_id', profile.id).eq('periodo', periodo);
+  const { data: evals } = await sb.from('evaluaciones_cualitativas').select('*').eq('persona_id', profile.id).eq('periodo', periodo);
+
+  const valMap = Object.fromEntries((valores||[]).map(v=>[v.indicador_id, v]));
+  const evalMap = Object.fromEntries((evals||[]).map(v=>[v.indicador_id, v]));
+
+  const cuanti = (indicadores||[]).filter(i=>i.tipo==='cuantitativo');
+  const cuali = (indicadores||[]).filter(i=>i.tipo==='cualitativo');
+
+  document.getElementById('main').innerHTML = `
+    <div class="page-head">
+      <div><h1>${profile.nombre}</h1><div class="sub">${ROL_LABEL[profile.rol]}</div></div>
+      <div class="period">Período: <b>${periodo.slice(0,7)}</b></div>
+    </div>
+    <div class="section-title"><span class="num">01</span> Indicadores cuantitativos</div>
+    <table>
+      <tr><th>Indicador</th><th>Marca / Red</th><th style="width:170px;">Valor</th><th>Objetivo</th></tr>
+      ${cuanti.length ? cuanti.map(i=>{
+        const v = valMap[i.id];
+        const disabled = puedeCargarCuanti ? '' : 'disabled';
+        return `<tr>
+          <td>${i.nombre}<div class="tagmini">${i.frecuencia||''} · ${i.fuente_datos||''}</div></td>
+          <td class="tagmini">${[i.marca,i.red_social].filter(Boolean).join(' · ') || '—'}</td>
+          <td><input class="valinput" id="v-${i.id}" type="number" step="any" value="${v?v.valor:''}" ${disabled}>
+              ${puedeCargarCuanti?`<button class="savebtn" onclick="saveValor(${i.id}, '${profile.id}')">Guardar</button>`:''}</td>
+          <td class="mono">${v&&v.objetivo!=null?v.objetivo:'—'}</td>
+        </tr>`;
+      }).join('') : `<tr><td colspan="4" class="empty">No hay indicadores cuantitativos cargados en el catálogo para este rol.</td></tr>`}
+    </table>
+    <div class="section-title"><span class="num">02</span> Evaluación cualitativa</div>
+    <table>
+      <tr><th>Criterio</th><th style="width:170px;">Puntaje (0-100)</th><th>Comentario</th></tr>
+      ${cuali.length ? cuali.map(i=>{
+        const v = evalMap[i.id];
+        const disabled = puedeCargarCuali ? '' : 'disabled';
+        return `<tr>
+          <td>${i.nombre}</td>
+          <td><input class="valinput" id="s-${i.id}" type="number" min="0" max="100" value="${v?v.puntaje:''}" ${disabled}>
+              ${puedeCargarCuali?`<button class="savebtn" onclick="saveEval(${i.id}, '${profile.id}')">Guardar</button>`:''}</td>
+          <td><input class="valinput" style="width:100%" id="c-${i.id}" type="text" value="${v&&v.comentario?v.comentario.replace(/"/g,'&quot;'):''}" ${disabled} placeholder="Comentario opcional"></td>
+        </tr>`;
+      }).join('') : `<tr><td colspan="3" class="empty">No hay indicadores cualitativos cargados en el catálogo para este rol.</td></tr>`}
+    </table>
+  `;
+}
+
+async function saveValor(indicadorId, personaId){
+  const valor = document.getElementById(`v-${indicadorId}`).value;
+  const btn = event.target;
+  const { error } = await sb.from('valores_cuantitativos').upsert({
+    indicador_id: indicadorId, persona_id: personaId, periodo: currentPeriodo(),
+    valor: valor === '' ? null : Number(valor), cargado_por: myProfile.id
+  }, { onConflict: 'indicador_id,persona_id,periodo' });
+  if(!error){ btn.textContent='Guardado ✓'; btn.classList.add('saved'); setTimeout(()=>{btn.textContent='Guardar'; btn.classList.remove('saved');}, 1500); }
+  else { alert('No se pudo guardar: ' + error.message); }
+}
+
+async function saveEval(indicadorId, personaId){
+  const puntaje = document.getElementById(`s-${indicadorId}`).value;
+  const comentario = document.getElementById(`c-${indicadorId}`).value;
+  const btn = event.target;
+  const { error } = await sb.from('evaluaciones_cualitativas').upsert({
+    indicador_id: indicadorId, persona_id: personaId, periodo: currentPeriodo(),
+    puntaje: puntaje === '' ? null : Number(puntaje), comentario, evaluado_por: myProfile.id
+  }, { onConflict: 'indicador_id,persona_id,periodo' });
+  if(!error){ btn.textContent='Guardado ✓'; btn.classList.add('saved'); setTimeout(()=>{btn.textContent='Guardar'; btn.classList.remove('saved');}, 1500); }
+  else { alert('No se pudo guardar: ' + error.message); }
+}
+
+async function renderConsolidado(){
+  document.getElementById('main').innerHTML = '<div class="loading">Cargando…</div>';
+  document.getElementById('main').innerHTML = `
+    <div class="page-head"><div><h1>Vista Consolidada</h1><div class="sub">Equipo de marketing</div></div></div>
+    <div class="team-grid">
+      ${allProfiles.map(p=>`<div class="person-card" onclick="switchTo('${p.id}')"><div class="role">${ROL_LABEL[p.rol]}</div><div class="name">${p.nombre}</div></div>`).join('')}
+    </div>
+    <p class="empty">Hacé clic en una persona para ver su detalle.</p>
+  `;
+}
+
+// Si ya había una sesión activa (recargó la página), la retoma.
+sb.auth.getSession().then(({data})=>{
+  if(data.session) afterLogin(data.session.user);
+});
+</script>
+</body>
+</html>
