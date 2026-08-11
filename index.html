@@ -401,6 +401,11 @@ function switchTo(id){
   renderPersona(viewingProfile);
 }
 
+function cambiarPeriodo(valorMes){
+  // input type=month da "YYYY-MM" -> lo llevamos a "YYYY-MM-01"
+  renderPersona(currentViewProfile, valorMes + '-01');
+}
+
 function applyFilters(){
   const marca = document.getElementById('filter-marca')?.value || '';
   const red = document.getElementById('filter-red')?.value || '';
@@ -413,9 +418,9 @@ function applyFilters(){
 
 function pill(tipo){ return `<span class="pill ${tipo==='cuantitativo'?'cuanti':'cuali'}">${tipo==='cuantitativo'?'Cuantitativo':'Cualitativo'}</span>`; }
 
-async function renderPersona(profile){
+async function renderPersona(profile, periodoOverride){
   document.getElementById('main').innerHTML = '<div class="loading">Cargando indicadores…</div>';
-  const periodo = currentPeriodo();
+  const periodo = periodoOverride || currentPeriodo();
   const puedeCargarCuanti = myProfile.id === profile.id || ES_DIRECTIVO(myProfile.rol);
   const puedeCargarCuali = ES_DIRECTIVO(myProfile.rol);
 
@@ -437,7 +442,7 @@ async function renderPersona(profile){
   document.getElementById('main').innerHTML = `
     <div class="page-head">
       <div><h1>${profile.nombre}</h1><div class="sub">${ROL_LABEL[profile.rol]}</div></div>
-      <div class="period">Período: <b>${periodo.slice(0,7)}</b></div>
+      <div class="period">Período: <input type="month" id="periodo-select" value="${periodo.slice(0,7)}" onchange="cambiarPeriodo(this.value)" style="font-family:'Roboto Mono';font-size:12px;border:1px solid var(--line);padding:3px 6px;"></div>
     </div>
     <div class="section-title"><span class="num">01</span> Indicadores cuantitativos
       ${puedeCargarCuanti ? `<span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
@@ -480,7 +485,52 @@ async function renderPersona(profile){
         </tr>`;
       }).join('') : `<tr><td colspan="3" class="empty">No hay indicadores cualitativos cargados en el catálogo para este rol.</td></tr>`}
     </table>
+    <div class="section-title"><span class="num">03</span> Evolución mensual
+      <button class="savebtn" style="margin-left:auto;" onclick="toggleEvolucion()">Ver últimos 12 meses</button>
+    </div>
+    <div id="evolucion-container"></div>
   `;
+}
+
+function ultimos12Periodos(){
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for(let i=0;i<12;i++){
+    out.unshift(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);
+    d.setMonth(d.getMonth()-1);
+  }
+  return out;
+}
+
+let evolucionAbierta = false;
+async function toggleEvolucion(){
+  const cont = document.getElementById('evolucion-container');
+  evolucionAbierta = !evolucionAbierta;
+  if(!evolucionAbierta){ cont.innerHTML = ''; return; }
+  cont.innerHTML = '<div class="loading">Cargando evolución…</div>';
+  const periodos = ultimos12Periodos();
+  const ids = currentCuanti.map(i=>i.id);
+  const { data: valores } = await sb.from('valores_cuantitativos').select('*')
+    .eq('persona_id', currentViewProfile.id).in('indicador_id', ids)
+    .gte('periodo', periodos[0]);
+  const map = {};
+  (valores||[]).forEach(v=>{
+    map[`${v.indicador_id}_${v.periodo}`] = v.valor;
+  });
+  const rows = currentCuanti.map(i=>{
+    const cells = periodos.map(p=>{
+      const v = map[`${i.id}_${p}`];
+      return `<td class="mono" style="text-align:right;">${v!==undefined && v!==null ? v : '—'}</td>`;
+    }).join('');
+    return `<tr data-marca="${i.marca||''}" data-red="${i.red_social||''}">
+      <td>${i.nombre}<div class="tagmini">${[i.marca,i.red_social].filter(Boolean).join(' · ')}</div></td>
+      ${cells}
+    </tr>`;
+  }).join('');
+  const headers = periodos.map(p=>`<th style="text-align:right;">${p.slice(0,7)}</th>`).join('');
+  cont.innerHTML = `<table><tr><th>Indicador</th>${headers}</tr>${rows}</table>`;
+  applyFilters();
 }
 
 async function saveValor(indicadorId, personaId){
