@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
   :root{
     --red:#E8001D; --ink:#141414; --paper:#FAFAF8; --line:#E3E1DA; --muted:#726F68;
@@ -529,8 +530,58 @@ async function toggleEvolucion(){
     </tr>`;
   }).join('');
   const headers = periodos.map(p=>`<th style="text-align:right;">${p.slice(0,7)}</th>`).join('');
-  cont.innerHTML = `<table><tr><th>Indicador</th>${headers}</tr>${rows}</table>`;
+  cont.innerHTML = `
+    <div class="filters">
+      <select id="evo-chart-select" onchange="renderEvoChart()">
+        ${currentCuanti.map(i=>`<option value="${i.id}">${i.nombre}${i.marca?` — ${[i.marca,i.red_social].filter(Boolean).join(' · ')}`:''}</option>`).join('')}
+      </select>
+    </div>
+    <div style="background:#fff;border:1px solid var(--line);padding:16px;margin-bottom:20px;height:280px;">
+      <canvas id="evo-chart"></canvas>
+    </div>
+    <table><tr><th>Indicador</th>${headers}</tr>${rows}</table>`;
+  window._evoPeriodos = periodos;
+  window._evoMap = map;
+  renderEvoChart();
   applyFilters();
+}
+
+let evoChartInstance = null;
+function renderEvoChart(){
+  const select = document.getElementById('evo-chart-select');
+  if(!select) return;
+  const id = select.value;
+  const ind = currentCuanti.find(i=>String(i.id)===String(id));
+  const periodos = window._evoPeriodos;
+  const map = window._evoMap;
+  const data = periodos.map(p=>{
+    const v = map[`${id}_${p}`];
+    return (v!==undefined && v!==null) ? v : null;
+  });
+  const ctx = document.getElementById('evo-chart').getContext('2d');
+  if(evoChartInstance) evoChartInstance.destroy();
+  evoChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: periodos.map(p=>p.slice(0,7)),
+      datasets: [{
+        label: ind ? ind.nombre : '',
+        data: data,
+        spanGaps: true,
+        borderColor: '#E8001D',
+        backgroundColor: 'rgba(232,0,29,0.08)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: false } }
+    }
+  });
 }
 
 async function saveValor(indicadorId, personaId){
